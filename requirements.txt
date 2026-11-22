@@ -5,3 +5,4 @@ prometheus-client==0.20.0
 opentelemetry-sdk==1.25.0
 opentelemetry-instrumentation-fastapi==0.46b0
 pytest==8.2.2
+setuptools<82
