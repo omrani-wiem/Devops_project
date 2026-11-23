@@ -1,0 +1,8 @@
+alertmanager:
+  enabled: false
+prometheus:
+  prometheusSpec:
+     serviceMonitorSelectorNilUsesHelmValues: false
+     scrapeInterval: 5s
+grafana:
+   adminPassword: admin
