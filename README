@@ -1,0 +1,90 @@
+# Todo API: projet DevOps
+
+API REST de gestion de tâches (FastAPI) avec CI/CD, conteneurisation, déploiement Kubernetes, observabilité et scans de sécurité.
+
+## Architecture
+
+```
+Dev → GitHub (PR + review) → GitHub Actions: test → SAST (Bandit) → build/push Docker Hub → deploy kind → DAST (ZAP)
+                                                                              │
+                                                    Docker Hub ──► Kubernetes (2 pods) ◄── Prometheus ──► Grafana
+```
+
+## Prérequis
+Python 3.12, Docker Desktop, kind, kubectl.
+
+## Lancer en local
+```bash
+python -m venv venv && source venv/bin/activate   # Windows : venv\Scripts\activate
+pip install -r requirements.txt
+pytest -v
+uvicorn app:app --port 8000
+```
+Documentation Swagger : http://localhost:8000/docs
+
+## Docker
+```bash
+docker build -t devops-project:local .
+docker run --rm -p 8000:8000 devops-project:local
+```
+Image publiée : `TON_USER_DOCKERHUB/devops-project:latest`
+
+## Docker Compose (API + Prometheus + Grafana)
+```bash
+docker compose up --build -d
+```
+| Service | URL |
+|---|---|
+| API | http://localhost:8000 |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 (admin / admin) |
+
+## Kubernetes (kind)
+```bash
+kind create cluster --name devops
+kubectl apply -f k8s/
+kubectl get pods
+kubectl port-forward svc/todo-api 8000:80
+```
+
+## Exemples d'API
+```bash
+curl -X POST localhost:8000/tasks -H "Content-Type: application/json" -d '{"title":"learn devops"}'
+curl localhost:8000/tasks
+curl localhost:8000/tasks/1
+curl -X DELETE localhost:8000/tasks/1
+curl localhost:8000/health
+curl localhost:8000/metrics
+```
+| Méthode | Route | Description | Codes |
+|---|---|---|---|
+| GET | /health | état du service | 200 |
+| GET | /metrics | métriques Prometheus | 200 |
+| GET | /tasks | liste des tâches | 200 |
+| POST | /tasks | crée une tâche | 201, 422 |
+| GET | /tasks/{id} | détail | 200, 404 |
+| DELETE | /tasks/{id} | supprime | 204, 404 |
+
+## Observabilité
+- **Métriques** : `http_requests_total`, `http_request_duration_seconds` sur `/metrics`, dashboard Grafana
+- **Logs** : JSON structuré avec `trace_id`
+- **Tracing** : OpenTelemetry (spans exportés en console)
+- 
+## Monitoring sur Kubernetes (Helm)
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace -f monitoring/values.yaml
+kubectl apply -f monitoring/servicemonitor.yaml
+kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
+```
+
+## Sécurité
+- **SAST** : Bandit dans la CI (rapport en artifact)
+- **DAST** : OWASP ZAP sur l'API déployée dans kind (rapport en artifact)
+- Conteneur exécuté avec un utilisateur non-root
+
+## CI/CD
+Voir `.github/workflows/ci.yml` : `test` + `sast` (parallèles) → `docker` (build + push) → `deploy-dast`.
+
+## Limites connues
+Données en mémoire (perdues au redémarrage, non partagées entre pods), spans exportés en console, pas d'alerting.
