@@ -51,3 +51,42 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/devops-project:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/devops-project:${{ github.sha }}
+
+  deploy-dast:
+    needs: [docker]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ci
+
+      - name: Deploy to kubernetes
+        run: |
+          kubectl apply -f k8s/
+          kubectl set image deployment/todo-api api=${{ secrets.DOCKERHUB_USERNAME }}/devops-project:${{ github.sha }}
+          kubectl rollout status deployment/todo-api --timeout=120s
+
+      - name: Expose the service
+        run: |
+          nohup kubectl port-forward svc/todo-api 8000:80 > pf.log 2>&1 &
+          sleep 5
+          curl -f http://localhost:8000/health
+
+      - name: DAST scan (OWASP ZAP)
+        run: |
+          chmod -R a+w .
+          docker run --rm --network host -v $(pwd):/zap/wrk:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-api-scan.py -t http://localhost:8000/openapi.json -f openapi \
+            -r zap-report.html -I
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-report
+          path: zap-report.html
+
